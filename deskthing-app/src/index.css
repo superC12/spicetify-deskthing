@@ -1,0 +1,634 @@
+@import '@fontsource/montserrat/latin-300.css';
+@import '@fontsource/montserrat/latin-500.css';
+@import '@fontsource/montserrat/latin-700.css';
+@import '@fontsource/montserrat/latin-800.css';
+
+/* Juxtaposed colours; theme.ts replaces them with the current cover's */
+:root {
+  --bg: hsl(260, 30%, 9%);
+  --bg-deep: hsl(260, 30%, 3%);
+  --glow: hsl(260, 30%, 20%);
+  --card: hsl(260, 30%, 14%);
+  --strip: hsla(260, 30%, 5%, 0.88);
+  --accent: hsl(150, 70%, 50%);
+  --accent-soft: hsla(150, 70%, 50%, 0.2);
+  --text-dim: rgba(255, 255, 255, 0.62);
+  --font: 'Montserrat', 'Noto Sans CJK JP', 'Noto Sans JP', system-ui, sans-serif;
+  --strip-h: 104px;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-deep);
+  color: #fff;
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+button:focus {
+  outline: none;
+}
+img {
+  -webkit-user-drag: none;
+}
+
+.app {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  isolation: isolate;
+}
+
+/* Blurred cover over the Juxtaposed glow, like Lyrics Plus full screen with the album-cover background */
+.bg {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: -1;
+  overflow: hidden;
+  background: radial-gradient(120% 90% at 20% 10%, var(--glow), var(--bg) 55%, var(--bg-deep));
+  transition: background 0.8s;
+}
+.bg img {
+  position: absolute;
+  top: -60px;
+  left: -60px;
+  width: calc(100% + 120px);
+  height: calc(100% + 120px);
+  object-fit: cover;
+  filter: none;
+  opacity: 0.6;
+}
+.bg-glow {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: linear-gradient(180deg, transparent 40%, rgba(0, 0, 0, 0.35));
+}
+
+.dots {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 3;
+  display: flex;
+}
+.dots button {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transition: width 0.2s, background 0.2s;
+}
+.dots button.on {
+  width: 22px;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.page {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+.empty {
+  padding: 40px 0;
+  color: var(--text-dim);
+  font-size: 20px;
+  font-weight: 500;
+}
+
+/* ---------------------------------------------------------------- now playing */
+.now {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-gap: 34px;
+  align-items: center;
+  padding: 26px 34px 22px 44px;
+}
+.now-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.kicker {
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.big-title {
+  font-size: 50px;
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.big-artist {
+  font-size: 26px;
+  font-weight: 300;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.now-line {
+  min-height: 52px;
+  margin-top: 10px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #fff;
+}
+.now-line > div {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.roman {
+  font-size: 0.7em;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+.now-controls {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+}
+.plain {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  transition: transform 0.12s;
+}
+.plain:active,
+.toggle:active,
+.big:active,
+.like:active {
+  transform: scale(0.9);
+}
+/* Shuffle and repeat when on: tinted circle and a dot, the same as the mini player */
+.toggle {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.85);
+  transition: background 0.2s, color 0.2s, transform 0.12s;
+}
+.toggle::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0;
+  transform: scale(0);
+  transition: opacity 0.2s, transform 0.2s;
+}
+.toggle.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.toggle.on::after {
+  opacity: 1;
+  transform: scale(1);
+}
+.now-cover img,
+.cover-empty {
+  display: block;
+  /* As big as the space above the strip allows, up to 296px (no min() on the Car Thing's Chromium) */
+  width: calc(100vh - var(--strip-h) - 64px);
+  height: calc(100vh - var(--strip-h) - 64px);
+  max-width: 296px;
+  max-height: 296px;
+  border-radius: 14px;
+  object-fit: cover;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.cover-empty {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ---------------------------------------------------------------- lyrics */
+.lyrics {
+  height: 100%;
+  position: relative;
+}
+.segs {
+  position: absolute;
+  top: 34px;
+  right: 16px;
+  z-index: 2;
+  display: flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.3);
+}
+.segs button {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+.segs button.on {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+.lyrics-scroll {
+  height: 100%;
+  overflow-y: auto;
+  padding: 40px 150px 50% 44px;
+  scrollbar-width: none;
+  mask-image: linear-gradient(transparent, #000 14%, #000 80%, transparent);
+  -webkit-mask-image: linear-gradient(transparent, #000 14%, #000 80%, transparent);
+}
+.lyrics-scroll::-webkit-scrollbar {
+  display: none;
+}
+.line {
+  margin: 0 0 18px;
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: rgba(255, 255, 255, 0.38);
+  transition: color 0.3s;
+}
+.line.active {
+  color: #fff;
+}
+.line .roman {
+  margin-top: 3px;
+  font-size: 0.62em;
+  font-weight: 600;
+  color: inherit;
+  opacity: 0.85;
+}
+
+/* ---------------------------------------------------------------- lists */
+.listpage {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 0 0 44px;
+}
+.page-title {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin-bottom: 10px;
+}
+.list,
+.grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 34px 20px 0;
+  scrollbar-width: none;
+}
+.list::-webkit-scrollbar,
+.grid::-webkit-scrollbar {
+  display: none;
+}
+.row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 7px 8px;
+  border-radius: 10px;
+  text-align: left;
+}
+.row:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+.row img,
+.thumb-empty {
+  flex: 0 0 auto;
+  width: 54px;
+  height: 54px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+}
+.row-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.row-title {
+  font-size: 20px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row-sub {
+  font-size: 15px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-gap: 16px;
+  align-content: start;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  min-width: 0;
+}
+.tile img,
+.tile-empty {
+  width: 100%;
+  height: calc((100vw - 142px) / 5);
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  color: var(--text-dim);
+}
+.tile.playing img {
+  box-shadow: 0 0 0 3px var(--accent);
+}
+.tile-name {
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------------------------------------------------------------- PC */
+.pc {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  grid-gap: 30px;
+  align-items: center;
+  padding: 18px 40px 18px 44px;
+}
+.clock {
+  font-size: 118px;
+  font-weight: 800;
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+}
+.ampm {
+  margin-left: 10px;
+  font-size: 34px;
+  font-weight: 300;
+  letter-spacing: 0;
+}
+.date {
+  margin-top: 6px;
+  font-size: 26px;
+  font-weight: 300;
+  color: rgba(255, 255, 255, 0.85);
+}
+.actions {
+  display: flex;
+  margin-top: 22px;
+}
+.actions button {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 14px;
+  font-weight: 700;
+}
+.actions button:active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.pc-right {
+  display: flex;
+  flex-direction: column;
+}
+.stat-num {
+  font-size: 54px;
+  font-weight: 800;
+  line-height: 1;
+}
+.stat-label {
+  margin: 4px 0 8px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+.meter {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+.meter > div {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.6s;
+}
+
+/* ---------------------------------------------------------------- now-playing strip */
+.strip {
+  position: relative;
+  flex: 0 0 var(--strip-h);
+  height: var(--strip-h);
+  display: flex;
+  align-items: center;
+  padding-right: 22px;
+  background: var(--strip);
+}
+.progress {
+  position: absolute;
+  top: -5px;
+  left: 0;
+  right: 0;
+  height: 14px;
+  display: flex;
+  align-items: center;
+}
+.progress::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 5px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.progress > div {
+  position: relative;
+  height: 4px;
+  margin-top: -1px;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+  width: 100%;
+  transform-origin: 0 50%;
+  transition: transform 0.5s linear;
+  will-change: transform;
+}
+.strip-cover {
+  flex: 0 0 auto;
+  width: var(--strip-h);
+  height: var(--strip-h);
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.05);
+}
+.strip-text {
+  flex: 1;
+  min-width: 0;
+}
+.strip-title {
+  font-size: 30px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.strip-sub {
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.strip-controls {
+  display: flex;
+  align-items: center;
+}
+.big {
+  width: 60px;
+  height: 60px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.12s;
+}
+.like {
+  display: inline-flex;
+  margin-right: 6px;
+  transition: transform 0.12s;
+}
+.like svg {
+  filter: none;
+}
+
+.hud {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 10;
+  transform: translate(-50%, -70%);
+  display: flex;
+  align-items: center;
+  padding: 16px 22px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.78);
+
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.hud-bar {
+  width: 220px;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+.hud-bar > div {
+  height: 100%;
+  background: var(--accent);
+}
+
+/* Spacing between flex items. The Car Thing's Chromium is too old for flexbox gap. */
+.dots > * + * { margin-left: 6px; }
+.now-text > * + * { margin-top: 6px; }
+.now-controls > * + * { margin-left: 18px; }
+.segs > * + * { margin-left: 4px; }
+.row > * + * { margin-left: 14px; }
+.tile > * + * { margin-top: 6px; }
+.actions > * + * { margin-left: 10px; }
+.actions button svg { margin-right: 8px; flex: 0 0 auto; }
+.actions button { white-space: nowrap; padding: 10px 13px; font-size: 13px; }
+.pc-right > * + * { margin-top: 22px; }
+.strip-text, .strip-controls { margin-left: 18px; }
+.strip-controls > * + * { margin-left: 16px; }
+.hud > * + * { margin-left: 14px; }
+.actions + .actions { margin-top: 10px; }
+
+/* One-time offer to hide DeskThing's own player bar */
+.prompt {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 20;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  padding: 8px 8px 8px 18px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.78);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.prompt > * + * { margin-left: 10px; }
+.prompt button { padding: 8px 14px; border-radius: 999px; font-weight: 800; }
+.prompt-yes { background: var(--accent); color: #000; }
+.prompt-no { background: rgba(255, 255, 255, 0.12); }
