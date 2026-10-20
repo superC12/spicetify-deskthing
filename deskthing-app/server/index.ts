@@ -3,6 +3,7 @@ import { DESKTHING_EVENTS, SongEvent, AUDIO_REQUESTS, SongAbilities, SongData11,
 import { WebSocketServer, WebSocket } from 'ws'
 import os from 'node:os'
 import { execFile } from 'node:child_process'
+import path from 'node:path'
 
 // The Spicetify "DeskThing Bridge" extension connects here from Spotify
 const BRIDGE_PORT = 8892
@@ -200,13 +201,31 @@ function cpuPercent(): number {
 // GPU usage and temperature from NVIDIA's driver tool. Missing on PCs without an NVIDIA card; then it's just left out.
 // (CPU temperature isn't readable on Windows without a separate monitoring tool, so there's none.)
 let gpu: { use: number; temp: number } | null = null
+// DeskThing's app process may not have System32 on its PATH, so try nvidia-smi's full Windows path first.
+// Whichever works is remembered; the first failure is written to DeskThing's log.
+const GPU_TOOLS = [
+  ...(process.platform === 'win32' ? [path.join(process.env.SystemRoot || process.env.windir || 'C:/Windows', 'System32', 'nvidia-smi.exe')] : []),
+  'nvidia-smi'
+]
+let gpuTool = 0
+let gpuWarned = false
 function readGpu(): void {
   execFile(
-    'nvidia-smi',
+    GPU_TOOLS[gpuTool],
     ['--query-gpu=utilization.gpu,temperature.gpu', '--format=csv,noheader,nounits'],
     { timeout: 3000, windowsHide: true },
     (error, stdout) => {
-      if (error) return void (gpu = null)
+      if (error) {
+        gpu = null
+        if (gpuTool < GPU_TOOLS.length - 1) {
+          gpuTool++
+          return readGpu()
+        }
+        if (!gpuWarned) console.warn('[spicetify] GPU reading unavailable:', String(error.message || error).split('\n')[0])
+        gpuWarned = true
+        gpuTool = 0
+        return
+      }
       const [use, temp] = String(stdout).split('\n')[0].split(',').map((v) => Number(v.trim()))
       gpu = Number.isFinite(use) && Number.isFinite(temp) ? { use, temp } : null
     }
