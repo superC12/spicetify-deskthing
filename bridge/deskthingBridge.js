@@ -1,5 +1,5 @@
 // NAME: DeskThing Bridge
-// VERSION: 0.1.0
+// VERSION: 0.2.2
 // DESCRIPTION: Sends what Spotify is playing (with lyrics, queue and playlists) to the Spicetify app on a DeskThing / Car Thing, and takes its commands.
 
 (function deskthingBridge() {
@@ -41,7 +41,14 @@
 			} catch {
 				return;
 			}
-			if (msg?.type === "command") runCommand(msg.payload ?? {}).catch((e) => console.warn(TAG, "command failed", msg.payload, e));
+			if (msg?.type === "command")
+				runCommand(msg.payload ?? {}).then(
+					() => send("log", { cmd: msg.payload?.cmd, ok: true }),
+					(e) => {
+						console.warn(TAG, "command failed", msg.payload, e);
+						send("log", { cmd: msg.payload?.cmd, ok: false, error: String(e?.message ?? e) });
+					}
+				);
 			else if (msg?.type === "refresh") {
 				lastState = "";
 				pushState(true);
@@ -153,24 +160,35 @@
 		if (!uri || !isOpen()) return;
 		lyricsFor = uri;
 		send("lyrics", { uri, status: "loading", lines: [] });
-		const lines = (await fetchLyrics(uri, item.metadata ?? {})) ?? [];
-		if (lyricsFor !== uri) return;
-		let romanized = null;
-		const texts = lines.map((l) => l.text ?? "");
-		if (NON_LATIN.test(texts.join("")) && shared()?.romanizeLines) {
-			try {
-				romanized = await shared().romanizeLines(texts);
-			} catch (e) {
-				console.warn(TAG, "romanization failed", e);
-			}
+		// Neither step may hang the screen on "Loading lyrics…": lyrics get 10 s, romanization 20 s (its dictionary
+		// downloads the first time). The lyrics go out as soon as they arrive; the romanized lines follow when ready.
+		let lines = [];
+		try {
+			lines = (await withTimeout(fetchLyrics(uri, item.metadata ?? {}), 10000)) ?? [];
+		} catch (e) {
+			console.warn(TAG, "lyrics failed or timed out", e);
 		}
 		if (lyricsFor !== uri) return;
-		send("lyrics", {
+		const message = (romanized) => ({
 			uri,
 			status: lines.length ? "ok" : "none",
 			synced: lines.some((l) => l.startTime != null),
 			lines: lines.map((l, i) => ({ text: l.text ?? "", roman: romanized?.[i] && romanized[i] !== l.text ? romanized[i] : null, time: l.startTime ?? null })),
 		});
+		send("lyrics", message(null));
+		const texts = lines.map((l) => l.text ?? "");
+		if (!NON_LATIN.test(texts.join("")) || !shared()?.romanizeLines) return;
+		try {
+			const romanized = await withTimeout(shared().romanizeLines(texts), 20000);
+			if (lyricsFor === uri) send("lyrics", message(romanized));
+		} catch (e) {
+			console.warn(TAG, "romanization failed or timed out", e);
+		}
+	}
+
+	function withTimeout(promise, ms) {
+		let timer;
+		return Promise.race([promise, new Promise((_, reject) => (timer = setTimeout(() => reject(new Error("timed out")), ms)))]).finally(() => clearTimeout(timer));
 	}
 
 	// ------------------------------------------------------------ queue, library
@@ -246,9 +264,14 @@
 			case "skipBy":
 				P.seek(Math.max(0, P.getProgress() + (Number(c.ms) || 0)));
 				break;
-			case "volume":
-				P.setVolume(Math.min(1, Math.max(0, Number(c.value))));
+			case "volume": {
+				// Spotify's own volume control first; Spicetify's helper as a fallback
+				const v = Math.min(1, Math.max(0, Number(c.value)));
+				const api = Spicetify.Platform.PlaybackAPI;
+				if (api?.setVolume) await api.setVolume(v);
+				else P.setVolume(v);
 				break;
+			}
 			case "mute":
 				P.setMute ? P.setMute(!P.getMute()) : P.toggleMute();
 				break;

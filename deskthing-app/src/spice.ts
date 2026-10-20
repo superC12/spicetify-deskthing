@@ -23,7 +23,8 @@ export type Line = { text: string; roman: string | null; time: number | null }
 export type Lyrics = { uri: string; status: 'loading' | 'ok' | 'none'; synced?: boolean; lines: Line[] }
 export type QueueItem = { uri: string; uid: string | null; title: string; artist: string; image: string | null }
 export type Playlist = { uri: string; name: string; image: string | null; owner: string | null }
-export type Stats = { cpu: number; memUsed: number; memTotal: number; uptime: number; host: string; time: number }
+export type Stats = { cpu: number; memUsed: number; memTotal: number; uptime: number; host: string; time: number; tz?: number; gpu?: number | null; gpuTemp?: number | null; receivedAt?: number }
+export type Weather = { temp: number; label: string; kind: string; day: boolean }
 
 export type Spice = {
   bridge: boolean
@@ -32,10 +33,11 @@ export type Spice = {
   queue: QueueItem[]
   playlists: Playlist[]
   stats: Stats | null
+  weather: Weather | null
 }
 
 // One shared store fed by the app's server; components subscribe with useSpice()
-let store: Spice = { bridge: false, state: null, lyrics: null, queue: [], playlists: [], stats: null }
+let store: Spice = { bridge: false, state: null, lyrics: null, queue: [], playlists: [], stats: null, weather: null }
 const subs = new Set<(s: Spice) => void>()
 const set = (patch: Partial<Spice>): void => {
   store = { ...store, ...patch }
@@ -59,8 +61,10 @@ function start(): void {
         return set({ queue: (p as { next: QueueItem[] }).next ?? [] })
       case 'library':
         return set({ playlists: (p as { playlists: Playlist[] }).playlists ?? [] })
+      case 'weather':
+        return set({ weather: p })
       case 'stats':
-        return set({ stats: p })
+        return set({ stats: { ...(p as Stats), receivedAt: Date.now() } })
     }
   }) as never)
   DeskThing.send({ type: 'spice', request: 'hello' } as never)

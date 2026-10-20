@@ -51,6 +51,8 @@ img {
 
 .app {
   position: relative;
+  /* Sideways drags are page swipes; up and down still scroll lists and lyrics */
+  touch-action: pan-y;
   width: 100vw;
   height: 100vh;
   display: flex;
@@ -89,12 +91,10 @@ img {
   background: linear-gradient(180deg, transparent 40%, rgba(0, 0, 0, 0.35));
 }
 
+/* Page dots sit inline (beside a title, or bottom-right on Home): the knob covers the top-right corner */
 .dots {
-  position: absolute;
-  top: 12px;
-  right: 16px;
-  z-index: 3;
   display: flex;
+  align-items: center;
 }
 .dots button {
   width: 8px;
@@ -198,7 +198,8 @@ img {
 }
 .plain:active,
 .toggle:active,
-.big:active,
+.skip:active,
+.play:active,
 .like:active {
   transform: scale(0.9);
 }
@@ -334,18 +335,16 @@ img {
   display: none;
 }
 .row {
-  width: 100%;
   display: flex;
   align-items: center;
   padding: 7px 8px;
   border-radius: 10px;
-  text-align: left;
+  cursor: pointer;
 }
 .row:active {
   background: rgba(255, 255, 255, 0.08);
 }
-.row img,
-.thumb-empty {
+.thumb {
   flex: 0 0 auto;
   width: 54px;
   height: 54px;
@@ -354,9 +353,8 @@ img {
   background: rgba(255, 255, 255, 0.06);
 }
 .row-text {
+  flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
 }
 .row-title {
   font-size: 20px;
@@ -378,29 +376,34 @@ img {
   grid-gap: 16px;
   align-content: start;
 }
+/* Every tile is the same square, with or without a cover */
 .tile {
-  display: flex;
-  flex-direction: column;
-  text-align: left;
+  display: block;
   min-width: 0;
+  cursor: pointer;
 }
-.tile img,
-.tile-empty {
+.tile-art {
+  display: block;
   width: 100%;
   height: calc((100vw - 142px) / 5);
   border-radius: 10px;
   object-fit: cover;
   background: var(--card);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+}
+.tile-empty {
+  line-height: calc((100vw - 142px) / 5);
+  text-align: center;
   font-size: 30px;
   color: var(--text-dim);
 }
-.tile.playing img {
+.tile:active .tile-art {
+  opacity: 0.7;
+}
+.tile.playing .tile-art {
   box-shadow: 0 0 0 3px var(--accent);
 }
 .tile-name {
+  margin-top: 6px;
   font-size: 14px;
   font-weight: 700;
   white-space: nowrap;
@@ -551,17 +554,34 @@ img {
   display: flex;
   align-items: center;
 }
-.big {
+/* Previous / play / next as one group; play is the white circle, as in Spotify and the Lyrics Plus mini player */
+.transport {
+  display: flex;
+  align-items: center;
+}
+.transport > * + * { margin-left: 10px; }
+.skip {
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.9);
+  transition: transform 0.12s;
+}
+.play {
   width: 60px;
   height: 60px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  border-radius: 50%;
+  background: #fff;
+  color: #000;
   transition: transform 0.12s;
 }
 .like {
   display: inline-flex;
-  margin-right: 6px;
   transition: transform 0.12s;
 }
 .like svg {
@@ -602,33 +622,196 @@ img {
 .now-controls > * + * { margin-left: 18px; }
 .segs > * + * { margin-left: 4px; }
 .row > * + * { margin-left: 14px; }
-.tile > * + * { margin-top: 6px; }
 .actions > * + * { margin-left: 10px; }
 .actions button svg { margin-right: 8px; flex: 0 0 auto; }
 .actions button { white-space: nowrap; padding: 10px 13px; font-size: 13px; }
 .pc-right > * + * { margin-top: 22px; }
 .strip-text, .strip-controls { margin-left: 18px; }
-.strip-controls > * + * { margin-left: 16px; }
+.strip-controls > * + * { margin-left: 18px; }
 .hud > * + * { margin-left: 14px; }
 .actions + .actions { margin-top: 10px; }
 
-/* One-time offer to hide DeskThing's own player bar */
-.prompt {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  z-index: 20;
-  transform: translateX(-50%);
+/* ---------------------------------------------------------------- list page header */
+.page-head {
   display: flex;
   align-items: center;
-  padding: 8px 8px 8px 18px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.78);
-  font-size: 14px;
+  margin-bottom: 10px;
+}
+.page-head .page-title {
+  margin-bottom: 0;
+}
+.page-head .dots {
+  margin-left: 16px;
+}
+
+/* ---------------------------------------------------------------- Home */
+/* Clock, cover and song on the left; weather + PC stats on one line above the lyrics; controls bottom-left.
+   The top-right corner stays empty because the Car Thing's knob covers it. */
+.home {
+  position: relative;
+  height: 100%;
+}
+.home-clock {
+  position: absolute;
+  left: 36px;
+  top: 24px;
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 0.95;
+}
+.home-clock .ampm {
+  margin-left: 6px;
+  font-size: 15px;
+  font-weight: 300;
+  letter-spacing: 0;
+}
+.home-date {
+  position: absolute;
+  left: 36px;
+  top: 66px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+.home-cover {
+  position: absolute;
+  left: 36px;
+  top: 104px;
+  width: 196px;
+  height: 196px;
+  border-radius: 14px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.home-title,
+.home-artist {
+  position: absolute;
+  left: 36px;
+  width: 270px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-title {
+  top: 312px;
+  font-size: 22px;
+  font-weight: 800;
+}
+.home-artist {
+  top: 340px;
+  font-size: 15px;
+  font-weight: 300;
+  color: var(--text-dim);
+}
+.home-info {
+  position: absolute;
+  left: 330px;
+  top: 22px;
+  display: flex;
+  align-items: center;
+  font-size: 15px;
   font-weight: 600;
   white-space: nowrap;
 }
-.prompt > * + * { margin-left: 10px; }
-.prompt button { padding: 8px 14px; border-radius: 999px; font-weight: 800; }
-.prompt-yes { background: var(--accent); color: #000; }
-.prompt-no { background: rgba(255, 255, 255, 0.12); }
+.home-info .wx {
+  display: inline-flex;
+  align-items: center;
+}
+.home-info .wx svg {
+  margin-right: 10px;
+}
+.home-info .st {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 14px;
+  color: var(--text-dim);
+}
+.home-info .st svg {
+  margin-right: 4px;
+  opacity: 0.8;
+}
+.home-info > :first-child {
+  margin-left: 0;
+}
+.home-lyrics {
+  position: absolute;
+  left: 296px;
+  right: 76px;
+  top: 52px;
+  bottom: 70px;
+}
+.home-lyrics .lyrics-scroll {
+  padding: 20px 20px 50% 34px;
+}
+.home-lyrics .line {
+  font-size: 28px;
+}
+.home-lyrics .empty {
+  padding: 20px 0;
+}
+.home-controls {
+  position: absolute;
+  left: 30px;
+  bottom: 24px;
+  display: flex;
+  align-items: center;
+  padding: 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.32);
+}
+.home-controls > * + * {
+  margin-left: 6px;
+}
+.home-controls .toggle,
+.hc {
+  width: 36px;
+  height: 36px;
+}
+.hc {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.9);
+  transition: transform 0.12s;
+}
+.hc:active {
+  transform: scale(0.9);
+}
+.hc-play {
+  width: 44px;
+  height: 44px;
+  background: #fff;
+  color: #000;
+}
+.hc-script {
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.hc-script.off {
+  opacity: 0.35;
+}
+.home-dots {
+  position: absolute;
+  right: 26px;
+  bottom: 26px;
+}
+.home-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.home-progress > div {
+  height: 100%;
+  width: 100%;
+  background: var(--accent);
+  transform-origin: 0 50%;
+  transition: transform 0.5s linear;
+  will-change: transform;
+}

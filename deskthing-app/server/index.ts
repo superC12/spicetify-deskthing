@@ -1,7 +1,8 @@
 import { DeskThing } from '@deskthing/server'
-import { DESKTHING_EVENTS, SongEvent, AUDIO_REQUESTS, SongAbilities, SongData11 } from '@deskthing/types'
+import { DESKTHING_EVENTS, SongEvent, AUDIO_REQUESTS, SongAbilities, SongData11, SETTING_TYPES } from '@deskthing/types'
 import { WebSocketServer, WebSocket } from 'ws'
 import os from 'node:os'
+import { execFile } from 'node:child_process'
 
 // The Spicetify "DeskThing Bridge" extension connects here from Spotify
 const BRIDGE_PORT = 8892
@@ -29,11 +30,14 @@ const cache: {
   lyrics: unknown
   queue: unknown
   library: unknown
-} = { state: null, lyrics: null, queue: null, library: null }
+  weather: unknown
+} = { state: null, lyrics: null, queue: null, library: null, weather: null }
 
 let wss: WebSocketServer | null = null
 let bridge: WebSocket | null = null
 let statsTimer: (() => void) | null = null
+let gpuTimer: (() => void) | null = null
+let weatherTimer: (() => void) | null = null
 
 // ------------------------------------------------------------------ images
 
@@ -141,7 +145,10 @@ function sendStatus(): void {
 // ------------------------------------------------------------------ to Spotify
 
 function command(payload: Record<string, unknown>): void {
-  if (bridge?.readyState === WebSocket.OPEN) bridge.send(JSON.stringify({ type: 'command', payload }))
+  const open = bridge?.readyState === WebSocket.OPEN
+  // Shows up in DeskThing's log, so a control that does nothing can be traced
+  console.log('[spicetify] command', payload.cmd, open ? 'sent to Spotify' : 'NOT sent: Spotify is not connected')
+  if (open) bridge!.send(JSON.stringify({ type: 'command', payload }))
 }
 
 // DeskThing's own music requests (the built-in player, button mappings)
@@ -190,6 +197,22 @@ function cpuPercent(): number {
   lastCpu = now
   return total ? Math.round(100 * (1 - idle / total)) : 0
 }
+// GPU usage and temperature from NVIDIA's driver tool. Missing on PCs without an NVIDIA card; then it's just left out.
+// (CPU temperature isn't readable on Windows without a separate monitoring tool, so there's none.)
+let gpu: { use: number; temp: number } | null = null
+function readGpu(): void {
+  execFile(
+    'nvidia-smi',
+    ['--query-gpu=utilization.gpu,temperature.gpu', '--format=csv,noheader,nounits'],
+    { timeout: 3000, windowsHide: true },
+    (error, stdout) => {
+      if (error) return void (gpu = null)
+      const [use, temp] = String(stdout).split('\n')[0].split(',').map((v) => Number(v.trim()))
+      gpu = Number.isFinite(use) && Number.isFinite(temp) ? { use, temp } : null
+    }
+  )
+}
+
 function stats(): void {
   const total = os.totalmem()
   toClient('stats', {
@@ -198,16 +221,131 @@ function stats(): void {
     memTotal: total,
     uptime: os.uptime(),
     host: os.hostname(),
-    time: Date.now()
+    time: Date.now(),
+    // The PC's time zone (minutes east of UTC), so the Car Thing can show the PC's local time
+    tz: -new Date().getTimezoneOffset(),
+    gpu: gpu?.use ?? null,
+    gpuTemp: gpu?.temp ?? null
   })
+}
+
+// ------------------------------------------------------------------ weather
+
+// Fetched on the PC (the Car Thing has no internet) from Open-Meteo, which needs no account or key.
+// The location is a US ZIP code the user enters in the app's settings in DeskThing (kept on their PC, never in this
+// code); it is turned into coordinates once with zippopotam.us. With no ZIP set there is no weather.
+let weatherZip = ''
+let coords: { lat: number; lon: number } | null = null
+let weatherKey = ''
+
+const SETTINGS = {
+  weatherZip: {
+    id: 'weatherZip',
+    type: SETTING_TYPES.STRING,
+    label: 'Weather ZIP code',
+    description: 'US ZIP code for the weather on the Home screen. Leave empty to hide the weather.',
+    value: '',
+    maxLength: 10
+  }
+}
+
+function setWeatherZip(value: unknown): void {
+  const zip = String(value ?? '').trim()
+  if (zip === weatherZip) return
+  weatherZip = zip
+  coords = null
+  weatherKey = ''
+  if (!zip) {
+    cache.weather = null
+    toClient('weather', null)
+    return
+  }
+  void weather()
+}
+
+// WMO weather codes, as Open-Meteo reports them
+function describe(code: number): { label: string; kind: string } {
+  if (code === 0) return { label: 'Clear', kind: 'clear' }
+  if (code === 1) return { label: 'Mostly clear', kind: 'clear' }
+  if (code === 2) return { label: 'Partly cloudy', kind: 'partly' }
+  if (code === 3) return { label: 'Cloudy', kind: 'cloudy' }
+  if (code === 45 || code === 48) return { label: 'Fog', kind: 'fog' }
+  if (code >= 51 && code <= 57) return { label: 'Drizzle', kind: 'rain' }
+  if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return { label: 'Rain', kind: 'rain' }
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return { label: 'Snow', kind: 'snow' }
+  if (code >= 95) return { label: 'Storms', kind: 'storm' }
+  return { label: 'Cloudy', kind: 'cloudy' }
+}
+
+async function weather(): Promise<void> {
+  if (!weatherZip) return
+  try {
+    if (!coords) {
+      const z = (await (await fetch(`https://api.zippopotam.us/us/${encodeURIComponent(weatherZip)}`)).json()) as { places?: { latitude: string; longitude: string }[] }
+      const p = z.places?.[0]
+      if (!p) return console.warn('[spicetify] weather: ZIP code not found')
+      coords = { lat: Number(p.latitude), lon: Number(p.longitude) }
+    }
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lon}&current=temperature_2m,weather_code,is_day&temperature_unit=fahrenheit&timezone=auto`
+    const w = (await (await fetch(url)).json()) as { current?: { temperature_2m: number; weather_code: number; is_day: number } }
+    if (!w.current) return
+    const { label, kind } = describe(w.current.weather_code)
+    const payload = { temp: Math.round(w.current.temperature_2m), label, kind, day: w.current.is_day === 1 }
+    const key = JSON.stringify(payload)
+    cache.weather = payload
+    // Only send when something changed (DeskThing replays everything it queued while the Car Thing was away)
+    if (key !== weatherKey) {
+      weatherKey = key
+      toClient('weather', payload)
+    }
+  } catch (e) {
+    console.warn('[spicetify] weather failed', e)
+  }
 }
 
 // ------------------------------------------------------------------ lifecycle
 
-const start = async (): Promise<void> => {
-  wss = new WebSocketServer({ host: '127.0.0.1', port: BRIDGE_PORT })
-  wss.on('error', (e) => console.error('[spicetify] bridge server error', e))
-  wss.on('connection', (socket) => {
+// When DeskThing reloads the app it starts a new copy of this server but can leave the old one running, still
+// holding the port, so Spotify stays connected to the old copy and the Car Thing's commands reach a copy with no
+// Spotify. A new copy that finds the port taken asks the old one to hand it over, then keeps retrying until it can.
+let stopped = false
+function listen(): void {
+  if (stopped) return
+  const server = new WebSocketServer({ host: '127.0.0.1', port: BRIDGE_PORT })
+  wss = server
+  server.on('listening', () => console.log('[spicetify] waiting for Spotify on ws://127.0.0.1:' + BRIDGE_PORT))
+  server.on('error', (e: NodeJS.ErrnoException) => {
+    if (wss === server) wss = null
+    if (e.code !== 'EADDRINUSE') return console.error('[spicetify] bridge server error', e)
+    console.log('[spicetify] port ' + BRIDGE_PORT + ' is held by an older copy of the app; asking it to hand over')
+    const ask = new WebSocket('ws://127.0.0.1:' + BRIDGE_PORT + '/?takeover=1')
+    ask.on('error', () => {})
+    ask.on('open', () => ask.close())
+    setTimeout(listen, 1500)
+  })
+  server.on('connection', onConnection)
+}
+
+// The old copy's side of the hand-over: close everything and stop, so the new copy can take the port
+function handOver(): void {
+  console.log('[spicetify] a newer copy of the app started; handing the port over')
+  stopped = true
+  statsTimer?.()
+  gpuTimer?.()
+  weatherTimer?.()
+  bridge?.close()
+  bridge = null
+  wss?.clients.forEach((c) => c.terminate())
+  wss?.close()
+  wss = null
+}
+
+function onConnection(socket: WebSocket, req: { url?: string }): void {
+  if (req.url?.includes('takeover')) {
+    socket.close()
+    return handOver()
+  }
+  {
     bridge?.close()
     bridge = socket
     sendStatus()
@@ -232,13 +370,21 @@ const start = async (): Promise<void> => {
         case 'library':
           void onLibrary(msg.payload as never)
           break
+        case 'log':
+          console.log('[spicetify] Spotify ran', JSON.stringify(msg.payload))
+          break
       }
     })
     socket.on('close', () => {
       if (bridge === socket) bridge = null
       sendStatus()
     })
-  })
+  }
+}
+
+const start = async (): Promise<void> => {
+  stopped = false
+  listen()
 
   // Requests from our own screens on the device
   DeskThing.on('spice' as never, ((data: { request?: string; payload?: Record<string, unknown> }) => {
@@ -249,6 +395,7 @@ const start = async (): Promise<void> => {
       if (cache.lyrics) toClient('lyrics', cache.lyrics)
       if (cache.queue) toClient('queue', cache.queue)
       if (cache.library) toClient('library', cache.library)
+      if (cache.weather) toClient('weather', cache.weather)
       stats()
       if (bridge?.readyState === WebSocket.OPEN) bridge.send(JSON.stringify({ type: 'refresh' }))
     }
@@ -259,12 +406,29 @@ const start = async (): Promise<void> => {
     if (cache.state) DeskThing.sendSong(songData(cache.state))
   }) as never)
 
+  // The weather ZIP lives in DeskThing's settings for this app
+  try {
+    await DeskThing.initSettings(SETTINGS as never)
+    const saved = (await DeskThing.getSettings()) as Record<string, { value?: unknown }> | null
+    setWeatherZip(saved?.weatherZip?.value)
+  } catch (e) {
+    console.warn('[spicetify] settings unavailable', e)
+  }
+  DeskThing.on(DESKTHING_EVENTS.SETTINGS, ((data: { payload?: Record<string, { value?: unknown }> }) => {
+    if (data.payload?.weatherZip) setWeatherZip(data.payload.weatherZip.value)
+  }) as never)
+
+  readGpu()
+  gpuTimer = DeskThing.setInterval(async () => readGpu(), 5000)
   statsTimer = DeskThing.setInterval(async () => stats(), 2000)
-  console.log(`[spicetify] waiting for Spotify on ws://127.0.0.1:${BRIDGE_PORT}`)
+  weatherTimer = DeskThing.setInterval(async () => weather(), 15 * 60 * 1000)
 }
 
 const stop = async (): Promise<void> => {
+  stopped = true
   statsTimer?.()
+  gpuTimer?.()
+  weatherTimer?.()
   bridge?.close()
   wss?.close()
   wss = null

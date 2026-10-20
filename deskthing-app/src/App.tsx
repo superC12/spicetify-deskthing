@@ -2,11 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { DeskThing } from '@deskthing/client'
 import { useSpice, useNow, command, progressOf, fmt, activeLine, Spice, Lyrics } from './spice'
 import { applyTheme, blurredCover } from './theme'
-import { deskthingBarVisible, setDeskthingBar, openDeskthingSettings } from './deskthingClient'
 import * as I from './icons'
 
-const PAGES = ['Now playing', 'Lyrics', 'Up next', 'Playlists', 'PC'] as const
+const PAGES = ['Home', 'Up next', 'Playlists'] as const
 type ScriptMode = 'original' | 'romanized' | 'both'
+const NEXT_MODE: Record<ScriptMode, ScriptMode> = { original: 'romanized', romanized: 'both', both: 'original' }
 
 // Two-tone like badge from Lyrics Plus: pink circle with the heart cut out when liked, soft circle otherwise
 const LikeBadge: React.FC<{ liked: boolean; size?: number }> = ({ liked, size = 46 }) => (
@@ -36,52 +36,141 @@ const Toggle: React.FC<{ on: boolean; label: string; onClick: () => void; childr
   </button>
 )
 
+const Dots: React.FC<{ page: number; setPage: (n: number) => void }> = ({ page, setPage }) => (
+  <div className="dots">
+    {PAGES.map((p, i) => (
+      <button key={p} className={i === page ? 'on' : ''} onClick={() => setPage(i)} aria-label={p} />
+    ))}
+  </div>
+)
+
+// The PC's local time. The Car Thing's own clock and time zone aren't set, so the PC's clock (sent with the stats)
+// is moved on by however long ago it arrived, shifted into the PC's time zone and read back with the UTC getters.
+// Formatted by hand: the Car Thing's old browser has little locale data, so toLocale* output comes out odd there.
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+function pcClock(s: Spice, now: number): { hm: string; ampm: string; date: string } {
+  const st = s.stats
+  const pcNow = st?.receivedAt != null ? st.time + (now - st.receivedAt) : now
+  const utc = st?.tz != null
+  const d = utc ? new Date(pcNow + st!.tz! * 60000) : new Date(pcNow)
+  const hours = utc ? d.getUTCHours() : d.getHours()
+  const minutes = utc ? d.getUTCMinutes() : d.getMinutes()
+  return {
+    hm: `${hours % 12 || 12}:${String(minutes).padStart(2, '0')}`,
+    ampm: hours < 12 ? 'AM' : 'PM',
+    date: `${DAYS[utc ? d.getUTCDay() : d.getDay()]}, ${MONTHS[utc ? d.getUTCMonth() : d.getMonth()]} ${utc ? d.getUTCDate() : d.getDate()}`
+  }
+}
+
 // ------------------------------------------------------------------ pages
 
-const NowPlaying: React.FC<{ s: Spice; now: number; mode: ScriptMode }> = ({ s, now, mode }) => {
+// Home: clock, cover and song on the left; weather and PC stats on one line above the lyrics on the right;
+// the controls along the bottom-left. Nothing in the top right, where the knob covers the screen.
+const Home: React.FC<{
+  s: Spice
+  now: number
+  ms: number
+  mode: ScriptMode
+  setMode: (m: ScriptMode) => void
+  scrollRef: React.RefObject<HTMLDivElement>
+  page: number
+  setPage: (n: number) => void
+}> = ({ s, now, ms, mode, setMode, scrollRef, page, setPage }) => {
   const st = s.state
-  const idx = activeLine(s.lyrics, progressOf(st, now))
-  const line = idx >= 0 ? s.lyrics!.lines[idx] : null
+  const stats = s.stats
+  const w = s.weather
+  const clock = pcClock(s, now)
+  const pct = st?.duration ? Math.min(100, (100 * ms) / st.duration) : 0
+  const ram = stats ? Math.round((100 * stats.memUsed) / stats.memTotal) : null
+  const hasRoman = !!s.lyrics?.lines.some((l) => l.roman)
   return (
-    <div className="now">
-      <div className="now-text">
-        {st?.context?.name && <div className="kicker">{st.context.name}</div>}
-        <div className="big-title">{st?.title || 'Nothing playing'}</div>
-        <div className="big-artist">{st?.artists.join(', ') || (s.bridge ? 'Play something in Spotify' : 'Waiting for Spotify…')}</div>
-        <div className="now-line">
-          {line && (mode !== 'romanized' || !line.roman) && <div>{line.text || '♪'}</div>}
-          {line?.roman && mode !== 'original' && <div className="roman">{line.roman}</div>}
-        </div>
-        <div className="now-controls">
-          <Toggle on={(st?.shuffle ?? 0) > 0} label="Shuffle" onClick={() => command({ cmd: 'shuffle' })}>
-            {st?.shuffle === 2 ? <I.SmartShuffle size={24} /> : <I.Shuffle size={24} />}
-          </Toggle>
-          <button className="plain" onClick={() => command({ cmd: 'previous' })} aria-label="Previous">
-            <I.Prev size={26} />
-          </button>
-          <Toggle on={st?.repeat !== 'off' && !!st} label="Repeat" onClick={() => command({ cmd: 'repeat' })}>
-            {st?.repeat === 'track' ? <I.RepeatOne size={24} /> : <I.Repeat size={24} />}
-          </Toggle>
-          <button className="plain" onClick={() => command({ cmd: 'fullScreen' })} aria-label="Full screen on PC">
-            <I.Expand size={24} />
-          </button>
-        </div>
+    <div className="home">
+      <div className="home-clock">
+        {clock.hm}
+        <span className="ampm">{clock.ampm}</span>
       </div>
-      <div className="now-cover">{st?.thumbnail ? <img src={st.thumbnail} alt="" /> : <div className="cover-empty" />}</div>
+      <div className="home-date">{clock.date}</div>
+      {st?.thumbnail ? <img className="home-cover" src={st.thumbnail} alt="" /> : <div className="home-cover" />}
+      <div className="home-title">{st?.title || (s.bridge ? 'Nothing playing' : 'Waiting for Spotify…')}</div>
+      <div className="home-artist">{st?.artists.join(', ')}</div>
+
+      {/* Weather, then CPU use, RAM use and GPU temperature (Celsius, no unit letter) in grey */}
+      <div className="home-info">
+        {w && (
+          <span className="wx">
+            <I.WeatherIcon kind={w.kind} day={w.day} size={24} />
+            <span className="wx-text">
+              {w.temp}° · {w.label}
+            </span>
+          </span>
+        )}
+        {stats && (
+          <span className="st">
+            <I.Chip size={15} />
+            {stats.cpu}%
+          </span>
+        )}
+        {ram != null && (
+          <span className="st">
+            <I.Ram size={15} />
+            {ram}%
+          </span>
+        )}
+        {stats?.gpuTemp != null && (
+          <span className="st">
+            <I.Therm size={15} />
+            {stats.gpuTemp}°
+          </span>
+        )}
+      </div>
+
+      <div className="home-lyrics">
+        <LyricsPage lyrics={s.lyrics} ms={ms} mode={mode} scrollRef={scrollRef} />
+      </div>
+
+      <div className="home-controls">
+        {st && <LikeBadge liked={st.liked} size={34} />}
+        <button className="hc" onClick={() => command({ cmd: 'previous' })} aria-label="Previous">
+          <I.Prev size={22} />
+        </button>
+        <button className="hc hc-play" onClick={() => command({ cmd: 'toggle' })} aria-label={st?.playing ? 'Pause' : 'Play'}>
+          {st?.playing ? <I.Pause size={20} /> : <I.Play size={20} />}
+        </button>
+        <button className="hc" onClick={() => command({ cmd: 'next' })} aria-label="Next">
+          <I.Next size={22} />
+        </button>
+        <Toggle on={(st?.shuffle ?? 0) > 0} label="Shuffle" onClick={() => command({ cmd: 'shuffle' })}>
+          {st?.shuffle === 2 ? <I.SmartShuffle size={19} /> : <I.Shuffle size={19} />}
+        </Toggle>
+        <Toggle on={st?.repeat !== 'off' && !!st} label="Repeat" onClick={() => command({ cmd: 'repeat' })}>
+          {st?.repeat === 'track' ? <I.RepeatOne size={19} /> : <I.Repeat size={19} />}
+        </Toggle>
+        <button
+          className={`hc hc-script ${hasRoman ? '' : 'off'}`}
+          onClick={() => setMode(NEXT_MODE[mode])}
+          aria-label={`Lyrics: ${mode === 'original' ? 'as written' : mode === 'romanized' ? 'romanized' : 'both'}`}
+        >
+          {mode === 'original' ? 'あ' : mode === 'romanized' ? 'A' : 'あA'}
+        </button>
+        <button className="hc" onClick={() => command({ cmd: 'fullScreen' })} aria-label="Full screen on PC">
+          <I.Monitor size={19} />
+        </button>
+      </div>
+
+      <div className="home-dots">
+        <Dots page={page} setPage={setPage} />
+      </div>
+      <div className="home-progress">
+        <div style={{ transform: `scaleX(${pct / 100})` }} />
+      </div>
     </div>
   )
 }
 
-const LyricsPage: React.FC<{ lyrics: Lyrics | null; ms: number; mode: ScriptMode; setMode: (m: ScriptMode) => void; scrollRef: React.RefObject<HTMLDivElement> }> = ({
-  lyrics,
-  ms,
-  mode,
-  setMode,
-  scrollRef
-}) => {
+const LyricsPage: React.FC<{ lyrics: Lyrics | null; ms: number; mode: ScriptMode; scrollRef: React.RefObject<HTMLDivElement> }> = ({ lyrics, ms, mode, scrollRef }) => {
   const idx = activeLine(lyrics, ms)
   const held = useRef(0)
-  const hasRoman = lyrics?.lines.some((l) => l.roman)
   useEffect(() => {
     const box = scrollRef.current
     const el = box?.querySelector<HTMLElement>(`[data-i="${idx}"]`)
@@ -90,15 +179,6 @@ const LyricsPage: React.FC<{ lyrics: Lyrics | null; ms: number; mode: ScriptMode
   }, [idx, scrollRef])
   return (
     <div className="lyrics">
-      {hasRoman && (
-        <div className="segs">
-          {(['original', 'romanized', 'both'] as const).map((m) => (
-            <button key={m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)}>
-              {m === 'original' ? 'As written' : m === 'romanized' ? 'Romanized' : 'Both'}
-            </button>
-          ))}
-        </div>
-      )}
       <div className="lyrics-scroll" ref={scrollRef} onPointerDown={() => (held.current = Date.now() + 4000)} onWheel={() => (held.current = Date.now() + 4000)}>
         {!lyrics || lyrics.status === 'loading' ? (
           <div className="empty">Loading lyrics…</div>
@@ -125,94 +205,45 @@ const LyricsPage: React.FC<{ lyrics: Lyrics | null; ms: number; mode: ScriptMode
   )
 }
 
-const Queue: React.FC<{ s: Spice; scrollRef: React.RefObject<HTMLDivElement> }> = ({ s, scrollRef }) => (
+const Queue: React.FC<{ s: Spice; scrollRef: React.RefObject<HTMLDivElement>; page: number; setPage: (n: number) => void }> = ({ s, scrollRef, page, setPage }) => (
   <div className="listpage">
-    <div className="page-title">Up next</div>
+    <div className="page-head">
+      <div className="page-title">Up next</div>
+      <Dots page={page} setPage={setPage} />
+    </div>
     <div className="list" ref={scrollRef}>
       {s.queue.length === 0 && <div className="empty">Nothing queued</div>}
+      {/* Rows and tiles are divs: the Car Thing's old Chromium can't lay out flex content inside a <button> */}
       {s.queue.map((t, i) => (
-        <button key={(t.uid ?? t.uri) + i} className="row" onClick={() => command({ cmd: 'skipTo', uri: t.uri, uid: t.uid })}>
-          {t.image ? <img src={t.image} alt="" /> : <span className="thumb-empty" />}
-          <span className="row-text">
-            <span className="row-title">{t.title}</span>
-            <span className="row-sub">{t.artist}</span>
-          </span>
-        </button>
+        <div key={(t.uid ?? t.uri) + i} className="row" role="button" onClick={() => command({ cmd: 'skipTo', uri: t.uri, uid: t.uid })}>
+          {t.image ? <img className="thumb" src={t.image} alt="" /> : <div className="thumb thumb-empty" />}
+          <div className="row-text">
+            <div className="row-title">{t.title}</div>
+            <div className="row-sub">{t.artist}</div>
+          </div>
+        </div>
       ))}
     </div>
   </div>
 )
 
-const Playlists: React.FC<{ s: Spice; scrollRef: React.RefObject<HTMLDivElement> }> = ({ s, scrollRef }) => (
+const Playlists: React.FC<{ s: Spice; scrollRef: React.RefObject<HTMLDivElement>; page: number; setPage: (n: number) => void }> = ({ s, scrollRef, page, setPage }) => (
   <div className="listpage">
-    <div className="page-title">Playlists</div>
+    <div className="page-head">
+      <div className="page-title">Playlists</div>
+      <Dots page={page} setPage={setPage} />
+    </div>
     <div className="grid" ref={scrollRef}>
       {s.playlists.length === 0 && <div className="empty">No playlists yet</div>}
       {s.playlists.map((p) => (
-        <button key={p.uri} className={`tile ${s.state?.context?.uri === p.uri ? 'playing' : ''}`} onClick={() => command({ cmd: 'playUri', uri: p.uri })}>
-          {p.image ? <img src={p.image} alt="" /> : <span className="tile-empty">♪</span>}
-          <span className="tile-name">{p.name}</span>
-        </button>
+        <div key={p.uri} className={`tile ${s.state?.context?.uri === p.uri ? 'playing' : ''}`} role="button" onClick={() => command({ cmd: 'playUri', uri: p.uri })}>
+          {p.image ? <img className="tile-art" src={p.image} alt="" /> : <div className="tile-art tile-empty">♪</div>}
+          <div className="tile-name">{p.name}</div>
+        </div>
       ))}
     </div>
   </div>
 )
-
-const PC: React.FC<{ s: Spice; now: number }> = ({ s, now }) => {
-  const d = new Date(now)
-  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-  const [hm, ampm] = time.split(' ')
-  const st = s.stats
-  const mem = st ? Math.round((100 * st.memUsed) / st.memTotal) : null
-  const bar = deskthingBarVisible()
-  return (
-    <div className="pc">
-      <div className="pc-left">
-        <div className="clock">
-          {hm}
-          {ampm && <span className="ampm">{ampm}</span>}
-        </div>
-        <div className="date">{d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}</div>
-        <div className="actions">
-          <button onClick={() => command({ cmd: 'fullScreen' })}>
-            <I.Expand size={22} />
-            Full screen
-          </button>
-          <button onClick={() => command({ cmd: 'miniPlayer' })}>
-            <I.MiniPlayer size={22} />
-            Mini player
-          </button>
-          <button onClick={() => command({ cmd: 'lyricsPage' })}>
-            <I.Mic size={22} />
-            Lyrics
-          </button>
-        </div>
-        <div className="actions">
-          {bar !== null && (
-            <button onClick={() => setDeskthingBar(!bar)}>{bar ? 'Hide DeskThing bar' : 'Show DeskThing bar'}</button>
-          )}
-          <button onClick={openDeskthingSettings}>DeskThing settings</button>
-        </div>
-      </div>
-      <div className="pc-right">
-        <div className="stat">
-          <div className="stat-num">{st ? `${st.cpu}%` : '–'}</div>
-          <div className="stat-label">CPU</div>
-          <div className="meter">
-            <div style={{ width: `${st?.cpu ?? 0}%` }} />
-          </div>
-        </div>
-        <div className="stat">
-          <div className="stat-num">{mem != null ? `${mem}%` : '–'}</div>
-          <div className="stat-label">Memory{st ? ` · ${(st.memUsed / 2 ** 30).toFixed(1)} of ${(st.memTotal / 2 ** 30).toFixed(0)} GB` : ''}</div>
-          <div className="meter">
-            <div style={{ width: `${mem ?? 0}%` }} />
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // ------------------------------------------------------------------ app
 
@@ -225,8 +256,6 @@ const App: React.FC = () => {
     setModeState(m)
     localStorage.setItem('spice:script', m)
   }
-  // Offer once to hide DeskThing's own player bar, which duplicates our strip
-  const [barPrompt, setBarPrompt] = useState(() => deskthingBarVisible() === true && !localStorage.getItem('spice:barPromptDismissed'))
   const [volumeHud, setVolumeHud] = useState<number | null>(null)
   const hudTimer = useRef<number>()
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -241,8 +270,8 @@ const App: React.FC = () => {
     return () => void (live = false)
   }, [st?.thumbnail])
 
-  // The knob scrolls lists and lyrics, and changes the volume on the other pages. Pressing it plays or pauses.
-  // The four top buttons jump to Now playing, Lyrics, Up next and Playlists.
+  // The knob changes the volume on Home and scrolls Up next and Playlists. Pressing it plays or pauses.
+  // Top buttons 1–3 open the three tabs; button 4 is previous track and the round button to its right is next track.
   const volumeRef = useRef(0)
   const turnedAt = useRef(0)
   const sendTimer = useRef<number>()
@@ -251,15 +280,15 @@ const App: React.FC = () => {
   const pageRef = useRef(page)
   pageRef.current = page
   useEffect(() => {
-    const KEYS = ['Scroll', 'Enter', 'Digit1', 'Digit2', 'Digit3', 'Digit4']
+    // 'wheel' is the name DeskThing's SDK checks for the knob; without it DeskThing also changed the volume on every turn
+    const KEYS = ['wheel', 'Scroll', 'Enter', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'KeyM']
     try {
       DeskThing.overrideKeys(KEYS)
     } catch {}
     const onWheel = (e: WheelEvent): void => {
       const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY
       if (!delta) return
-      const p = pageRef.current
-      if (p === 1 || p === 2 || p === 3) {
+      if (pageRef.current !== 0) {
         const box = scrollRef.current
         if (box) box.scrollTop += Math.sign(delta) * 80
         return
@@ -280,11 +309,20 @@ const App: React.FC = () => {
       hudTimer.current = window.setTimeout(() => setVolumeHud(null), 1200)
     }
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Enter') return command({ cmd: 'toggle' })
-      const n = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(e.code)
-      const k = ['1', '2', '3', '4'].indexOf(e.key)
+      // The knob press arrives as Enter. Stop the browser also "pressing" whichever button was tapped last
+      // (it keeps focus), or play/pause would toggle twice and look like it did nothing.
+      if (e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter') {
+        e.preventDefault()
+        e.stopPropagation()
+        return command({ cmd: 'toggle' })
+      }
+      const n = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code)
+      const k = ['1', '2', '3'].indexOf(e.key)
       const target = n >= 0 ? n : k
-      if (target >= 0) setPage(target)
+      if (target >= 0) return setPage(target)
+      // Button 4 is previous track, the round button to its right is next track
+      if (e.code === 'Digit4' || e.key === '4') return command({ cmd: 'previous' })
+      if (e.code === 'KeyM' || e.code === 'Digit5' || e.key.toLowerCase() === 'm' || e.key === '5') return command({ cmd: 'next' })
     }
     window.addEventListener('wheel', onWheel, { passive: true })
     window.addEventListener('keydown', onKey)
@@ -297,89 +335,84 @@ const App: React.FC = () => {
     }
   }, [])
 
-  // Swipe left or right to change page
+  // Swipe left or right to change page. On the touchscreen this needs touch events: the browser treats a
+  // finger drag as a possible scroll and cancels pointer events, so a pointer-only swipe never fires.
+  // (The app also sets touch-action: pan-y, so sideways drags belong to us and lists still scroll up and down.)
   const start = useRef<{ x: number; y: number } | null>(null)
-  const onPointerDown = (e: React.PointerEvent): void => void (start.current = { x: e.clientX, y: e.clientY })
-  const onPointerUp = (e: React.PointerEvent): void => {
+  const swipeEnd = (x: number, y: number): void => {
     const p = start.current
     start.current = null
     if (!p) return
-    const dx = e.clientX - p.x
-    const dy = e.clientY - p.y
-    if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) setPage((n) => Math.min(PAGES.length - 1, Math.max(0, n + (dx < 0 ? 1 : -1))))
+    const dx = x - p.x
+    const dy = y - p.y
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) setPage((n) => Math.min(PAGES.length - 1, Math.max(0, n + (dx < 0 ? 1 : -1))))
   }
+  const onTouchStart = (e: React.TouchEvent): void => {
+    const t = e.touches[0]
+    if (t) start.current = { x: t.clientX, y: t.clientY }
+  }
+  const onTouchEnd = (e: React.TouchEvent): void => {
+    const t = e.changedTouches[0]
+    if (t) swipeEnd(t.clientX, t.clientY)
+    // Don't let a tapped button keep focus, so the knob press (Enter) can't trigger it
+    window.setTimeout(() => (document.activeElement as HTMLElement | null)?.blur?.(), 0)
+  }
+  // Mouse drags in DeskThing's PC window
+  const onMouseDown = (e: React.MouseEvent): void => void (start.current = { x: e.clientX, y: e.clientY })
+  const onMouseUp = (e: React.MouseEvent): void => swipeEnd(e.clientX, e.clientY)
 
   const pct = st?.duration ? Math.min(100, (100 * ms) / st.duration) : 0
   const content = useMemo(() => {
     switch (page) {
-      case 0:
-        return <NowPlaying s={s} now={now} mode={mode} />
       case 1:
-        return <LyricsPage lyrics={s.lyrics} ms={ms} mode={mode} setMode={setMode} scrollRef={scrollRef} />
+        return <Queue s={s} scrollRef={scrollRef} page={page} setPage={setPage} />
       case 2:
-        return <Queue s={s} scrollRef={scrollRef} />
-      case 3:
-        return <Playlists s={s} scrollRef={scrollRef} />
+        return <Playlists s={s} scrollRef={scrollRef} page={page} setPage={setPage} />
       default:
-        return <PC s={s} now={now} />
+        return <Home s={s} now={now} ms={ms} mode={mode} setMode={setMode} scrollRef={scrollRef} page={page} setPage={setPage} />
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, s, now, mode])
 
   return (
-    <div className="app" onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
+    <div className="app" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onMouseDown={onMouseDown} onMouseUp={onMouseUp}>
       <div className="bg">
         {bgImage && <img src={bgImage} alt="" />}
         <div className="bg-glow" />
       </div>
 
-      <div className="dots">
-        {PAGES.map((p, i) => (
-          <button key={p} className={i === page ? 'on' : ''} onClick={() => setPage(i)} aria-label={p} />
-        ))}
-      </div>
-
       <main className="page">{content}</main>
 
-      {barPrompt && (
-        <div className="prompt">
-          <span>DeskThing's own player bar is showing too.</span>
-          <button className="prompt-yes" onClick={() => setDeskthingBar(false)}>
-            Hide it
-          </button>
-          <button
-            className="prompt-no"
-            onClick={() => {
-              localStorage.setItem('spice:barPromptDismissed', '1')
-              setBarPrompt(false)
-            }}
-          >
-            Keep
-          </button>
-        </div>
-      )}
-
-      <footer className="strip">
-        <div className="progress" onClick={(e) => st?.duration && command({ cmd: 'seek', ms: ((e.clientX - e.currentTarget.getBoundingClientRect().left) / e.currentTarget.clientWidth) * st.duration })}>
-          <div style={{ transform: `scaleX(${pct / 100})` }} />
-        </div>
-        {st?.thumbnail ? <img className="strip-cover" src={st.thumbnail} alt="" onClick={() => setPage(0)} /> : <div className="strip-cover" />}
-        <div className="strip-text" onClick={() => setPage(page === 1 ? 0 : 1)}>
-          <div className="strip-title">{st?.title || (s.bridge ? 'Nothing playing' : 'Spotify not connected')}</div>
-          <div className="strip-sub">
-            {st ? `${st.artists.join(', ')} · ${fmt(ms)} / ${fmt(st.duration)}` : 'Turn on the DeskThing Bridge extension in Spicetify'}
+      {/* Home has its own controls; the other tabs keep the player strip */}
+      {page !== 0 && (
+        <footer className="strip">
+          <div className="progress" onClick={(e) => st?.duration && command({ cmd: 'seek', ms: ((e.clientX - e.currentTarget.getBoundingClientRect().left) / e.currentTarget.clientWidth) * st.duration })}>
+            <div style={{ transform: `scaleX(${pct / 100})` }} />
           </div>
-        </div>
-        <div className="strip-controls">
-          {st && <LikeBadge liked={st.liked} />}
-          <button className="big" onClick={() => command({ cmd: 'toggle' })} aria-label={st?.playing ? 'Pause' : 'Play'}>
-            {st?.playing ? <I.Pause size={50} /> : <I.Play size={50} />}
-          </button>
-          <button className="big" onClick={() => command({ cmd: 'next' })} aria-label="Next">
-            <I.Next size={50} />
-          </button>
-        </div>
-      </footer>
+          {st?.thumbnail ? <img className="strip-cover" src={st.thumbnail} alt="" onClick={() => setPage(0)} /> : <div className="strip-cover" />}
+          <div className="strip-text" onClick={() => setPage(0)}>
+            <div className="strip-title">{st?.title || (s.bridge ? 'Nothing playing' : 'Spotify not connected')}</div>
+            <div className="strip-sub">
+              {st ? `${st.artists.join(', ')} · ${fmt(ms)} / ${fmt(st.duration)}` : 'Turn on the DeskThing Bridge extension in Spicetify'}
+            </div>
+          </div>
+          {/* Like on its own, then previous / play / next together, the way every player lays them out */}
+          <div className="strip-controls">
+            {st && <LikeBadge liked={st.liked} size={42} />}
+            <div className="transport">
+              <button className="skip" onClick={() => command({ cmd: 'previous' })} aria-label="Previous">
+                <I.Prev size={32} />
+              </button>
+              <button className="play" onClick={() => command({ cmd: 'toggle' })} aria-label={st?.playing ? 'Pause' : 'Play'}>
+                {st?.playing ? <I.Pause size={30} /> : <I.Play size={30} />}
+              </button>
+              <button className="skip" onClick={() => command({ cmd: 'next' })} aria-label="Next">
+                <I.Next size={32} />
+              </button>
+            </div>
+          </div>
+        </footer>
+      )}
 
       {volumeHud != null && (
         <div className="hud">

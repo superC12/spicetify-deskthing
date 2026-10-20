@@ -4,7 +4,7 @@
   "isAudioSource": true,
   "requires": [],
   "label": "Spicetify",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "version_code": 11.0,
   "compatible_server": [11],
   "compatible_client": [11],
