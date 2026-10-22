@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- A music note with a spark: Spotify, spiced up -->
+  <path fill="#fff" d="M24 12l26-6v34.5a7.5 7.5 0 1 1-5-7.07V17.4l-16 3.7v25.4a7.5 7.5 0 1 1-5-7.07z"/>
+  <path fill="#ff5c93" d="M14 4l2.2 6.8L23 13l-6.8 2.2L14 22l-2.2-6.8L5 13l6.8-2.2z"/>
+</svg>
