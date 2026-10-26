@@ -37,7 +37,7 @@ You need DeskThing set up on your Car Thing and Spicetify on your PC.
 
 ### 1. The DeskThing app
 
-1. Download `spicetify-deskthing-v0.2.2.zip` from the [latest release](https://github.com/superC12/spicetify-deskthing/releases/latest).
+1. Download `spicetify-deskthing-v0.2.3.zip` from the [latest release](https://github.com/superC12/spicetify-deskthing/releases/latest).
 2. In DeskThing on your PC, open **Downloads → App** and load the zip from file. Acknowledge the **Insecure App** warning (the app isn't from DeskThing's store), then click **Initialize App**.
 3. To show the weather, open the app's settings in DeskThing and enter your US ZIP code under **Weather ZIP code**.
 4. Updating from an older version: after loading the new zip, quit DeskThing fully once (tray icon → Quit) and open it again. From v0.2.2 on, a reloaded app takes over from the old copy by itself.
@@ -72,6 +72,13 @@ To build the app yourself: `cd deskthing-app`, `npm install`, `npm run build`. T
 > Built for DeskThing 0.11 and Spotify 1.3.5 with Spicetify 2.45.3. This is a fan project, not affiliated with Spotify, DeskThing or the Spicetify team.
 
 ## 📋 Changelog
+
+### v0.2.3
+
+- Bigger play / pause, previous, next and other buttons on the Home tab, easier to tap.
+- Looks for nvidia-smi by its full Windows path. Known issue: the GPU temperature still doesn't show when DeskThing runs the app.
+- App icon in DeskThing.
+- The Spicetify bridge hasn't changed; no need to reinstall it.
 
 ### v0.2.2
 

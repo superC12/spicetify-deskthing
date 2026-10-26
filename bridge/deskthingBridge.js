@@ -1,5 +1,5 @@
 // NAME: DeskThing Bridge
-// VERSION: 0.2.2
+// VERSION: 0.2.3
 // DESCRIPTION: Sends what Spotify is playing (with lyrics, queue and playlists) to the Spicetify app on a DeskThing / Car Thing, and takes its commands.
 
 (function deskthingBridge() {
