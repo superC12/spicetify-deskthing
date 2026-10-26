@@ -107,19 +107,19 @@ const Home: React.FC<{
         )}
         {stats && (
           <span className="st">
-            <I.Chip size={15} />
+            <I.Chip size={16} />
             {stats.cpu}%
           </span>
         )}
         {ram != null && (
           <span className="st">
-            <I.Ram size={15} />
+            <I.Ram size={16} />
             {ram}%
           </span>
         )}
         {stats?.gpuTemp != null && (
           <span className="st">
-            <I.Therm size={15} />
+            <I.Therm size={16} />
             {stats.gpuTemp}°
           </span>
         )}

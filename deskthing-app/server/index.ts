@@ -201,19 +201,32 @@ function cpuPercent(): number {
 // GPU usage and temperature from NVIDIA's driver tool. Missing on PCs without an NVIDIA card; then it's just left out.
 // (CPU temperature isn't readable on Windows without a separate monitoring tool, so there's none.)
 let gpu: { use: number; temp: number } | null = null
-// DeskThing's app process may not have System32 on its PATH, so try nvidia-smi's full Windows path first.
-// Whichever works is remembered; the first failure is written to DeskThing's log.
-const GPU_TOOLS = [
-  ...(process.platform === 'win32' ? [path.join(process.env.SystemRoot || process.env.windir || 'C:/Windows', 'System32', 'nvidia-smi.exe')] : []),
-  'nvidia-smi'
-]
+// DeskThing runs app servers with an almost empty environment (no PATH, SystemRoot or ProgramFiles), and
+// NVIDIA's driver library fails to start without them ("Failed to initialize NVML"). So nvidia-smi gets its
+// full path and the standard Windows variables, filled in with the usual defaults when they're missing.
+// Whichever path works is remembered; the first failure is written to DeskThing's log.
+const WIN_ROOT = process.env.SystemRoot || process.env.windir || 'C:\\Windows'
+const GPU_ENV: NodeJS.ProcessEnv =
+  process.platform === 'win32'
+    ? {
+        ...process.env,
+        SystemRoot: WIN_ROOT,
+        windir: WIN_ROOT,
+        SystemDrive: process.env.SystemDrive || WIN_ROOT.slice(0, 2),
+        ProgramFiles: process.env.ProgramFiles || 'C:\\Program Files',
+        ProgramW6432: process.env.ProgramW6432 || process.env.ProgramFiles || 'C:\\Program Files',
+        ProgramData: process.env.ProgramData || 'C:\\ProgramData',
+        PATH: [process.env.PATH, path.join(WIN_ROOT, 'System32'), WIN_ROOT].filter(Boolean).join(';')
+      }
+    : process.env
+const GPU_TOOLS = [...(process.platform === 'win32' ? [path.join(WIN_ROOT, 'System32', 'nvidia-smi.exe')] : []), 'nvidia-smi']
 let gpuTool = 0
 let gpuWarned = false
 function readGpu(): void {
   execFile(
     GPU_TOOLS[gpuTool],
     ['--query-gpu=utilization.gpu,temperature.gpu', '--format=csv,noheader,nounits'],
-    { timeout: 3000, windowsHide: true },
+    { timeout: 3000, windowsHide: true, env: GPU_ENV },
     (error, stdout) => {
       if (error) {
         gpu = null

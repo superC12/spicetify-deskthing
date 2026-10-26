@@ -76,7 +76,8 @@ To build the app yourself: `cd deskthing-app`, `npm install`, `npm run build`. T
 ### v0.2.3
 
 - Bigger play / pause, previous, next and other buttons on the Home tab, easier to tap.
-- Looks for nvidia-smi by its full Windows path. Known issue: the GPU temperature still doesn't show when DeskThing runs the app.
+- GPU temperature now shows when DeskThing runs the app (it was missing the Windows settings NVIDIA's tool needs).
+- Easier-to-read text: brighter grey text, no thin font, slightly bigger date, artist and PC stats on Home, and a soft shadow over bright covers.
 - App icon in DeskThing.
 - The Spicetify bridge hasn't changed; no need to reinstall it.
 
