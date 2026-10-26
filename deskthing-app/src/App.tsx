@@ -130,21 +130,21 @@ const Home: React.FC<{
       </div>
 
       <div className="home-controls">
-        {st && <LikeBadge liked={st.liked} size={34} />}
+        {st && <LikeBadge liked={st.liked} size={46} />}
         <button className="hc" onClick={() => command({ cmd: 'previous' })} aria-label="Previous">
-          <I.Prev size={22} />
+          <I.Prev size={30} />
         </button>
         <button className="hc hc-play" onClick={() => command({ cmd: 'toggle' })} aria-label={st?.playing ? 'Pause' : 'Play'}>
-          {st?.playing ? <I.Pause size={20} /> : <I.Play size={20} />}
+          {st?.playing ? <I.Pause size={28} /> : <I.Play size={28} />}
         </button>
         <button className="hc" onClick={() => command({ cmd: 'next' })} aria-label="Next">
-          <I.Next size={22} />
+          <I.Next size={30} />
         </button>
         <Toggle on={(st?.shuffle ?? 0) > 0} label="Shuffle" onClick={() => command({ cmd: 'shuffle' })}>
-          {st?.shuffle === 2 ? <I.SmartShuffle size={19} /> : <I.Shuffle size={19} />}
+          {st?.shuffle === 2 ? <I.SmartShuffle size={26} /> : <I.Shuffle size={26} />}
         </Toggle>
         <Toggle on={st?.repeat !== 'off' && !!st} label="Repeat" onClick={() => command({ cmd: 'repeat' })}>
-          {st?.repeat === 'track' ? <I.RepeatOne size={19} /> : <I.Repeat size={19} />}
+          {st?.repeat === 'track' ? <I.RepeatOne size={26} /> : <I.Repeat size={26} />}
         </Toggle>
         <button
           className={`hc hc-script ${hasRoman ? '' : 'off'}`}
@@ -154,7 +154,7 @@ const Home: React.FC<{
           {mode === 'original' ? 'あ' : mode === 'romanized' ? 'A' : 'あA'}
         </button>
         <button className="hc" onClick={() => command({ cmd: 'fullScreen' })} aria-label="Full screen on PC">
-          <I.Monitor size={19} />
+          <I.Monitor size={26} />
         </button>
       </div>
 

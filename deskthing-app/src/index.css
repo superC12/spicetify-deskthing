@@ -740,7 +740,7 @@ img {
   left: 296px;
   right: 76px;
   top: 52px;
-  bottom: 70px;
+  bottom: 104px;
 }
 .home-lyrics .lyrics-scroll {
   padding: 20px 20px 50% 34px;
@@ -753,21 +753,22 @@ img {
 }
 .home-controls {
   position: absolute;
-  left: 30px;
-  bottom: 24px;
+  left: 24px;
+  bottom: 18px;
   display: flex;
   align-items: center;
-  padding: 6px;
+  padding: 8px;
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.32);
 }
 .home-controls > * + * {
-  margin-left: 6px;
+  margin-left: 10px;
 }
+/* Big enough to hit without looking (52px, play 62px) */
 .home-controls .toggle,
 .hc {
-  width: 36px;
-  height: 36px;
+  width: 52px;
+  height: 52px;
 }
 .hc {
   display: inline-flex;
@@ -781,13 +782,13 @@ img {
   transform: scale(0.9);
 }
 .hc-play {
-  width: 44px;
-  height: 44px;
+  width: 62px;
+  height: 62px;
   background: #fff;
   color: #000;
 }
 .hc-script {
-  font-size: 14px;
+  font-size: 19px;
   font-weight: 800;
   white-space: nowrap;
 }
